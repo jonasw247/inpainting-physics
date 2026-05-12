@@ -1,0 +1,585 @@
+/* ---------------------------------------------------------------------------
+   Inpainting physics - project page  (compact layout)
+   --------------------------------------------------------------------------- */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1c1e21;
+  --muted: #5b6168;
+  --accent: #1f5fbf;
+  --accent-dark: #184e9e;
+  --accent-soft: #eef4fc;
+  --link: #1f5fbf;
+  --rule: #e6e8eb;
+  --soft: #f7f8fa;
+  --maxw: 1120px;
+  --serif: "Charter", "Georgia", "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 15.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+/* ----------------------------- header / "paper" block -------------------- */
+/* shared by the (former) page header and the #paper section near the bottom  */
+
+.hero {
+  padding: 34px 0 18px;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(180deg, #fafbfc 0%, #ffffff 100%);
+  scroll-margin-top: 58px;   /* clear the fixed topnav when an anchor jumps here */
+}
+
+/* the first content section below the splash gets a touch more top breathing room */
+.hero-pad { padding-top: 30px; }
+
+.eyebrow {
+  text-align: center;
+  font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: 10px;
+}
+
+h1.title {
+  font-family: var(--serif); font-weight: 700;
+  font-size: clamp(24px, 3.4vw, 33px); line-height: 1.16;
+  text-align: center; margin: 0 auto 14px; max-width: 880px;
+}
+
+.authors {
+  text-align: center; font-size: 16px; line-height: 1.7;
+  margin: 0 auto 4px; max-width: 820px;
+}
+.authors a { color: var(--fg); }
+.authors a:hover { color: var(--link); }
+.authors sup { color: var(--muted); font-size: .72em; }
+
+.affil {
+  text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6;
+  margin: 8px auto 2px; max-width: 760px;
+}
+.affil .corr { margin-top: 4px; }
+.affil .corr a { color: var(--link); }
+
+/* ----------------------------- buttons (clean, no fill) ------------------ */
+
+.btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 16px 0 4px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 13px; border-radius: 7px;
+  background: #fff; color: var(--fg); font-size: 13.5px; font-weight: 600;
+  border: 1px solid #d4d7db;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.btn:hover { text-decoration: none; background: var(--soft); border-color: #b9bdc3; }
+.btn.primary { border-color: var(--accent); color: var(--accent); }
+.btn.primary:hover { background: var(--accent-soft); border-color: var(--accent); }
+.btn .ico { font-size: 13px; line-height: 1; opacity: .8; }
+.btn .muted { color: var(--muted); font-weight: 500; }
+
+.note-soft { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+/* section-nav bar - fixed to the very top of the viewport at all times.
+   Default = light translucent. While it floats over the black splash hero it
+   gets the .on-dark class (added in the markup, removed by main.js once you
+   scroll onto the white page); the two states cross-fade. */
+.topnav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+  background: rgba(255, 255, 255, .94);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 1px solid var(--rule);
+  transition: background-color .35s ease, border-color .35s ease;
+}
+.topnav .btns { margin: 0; padding: 8px 0; align-items: center; }
+.topnav .brand {
+  font-family: var(--serif); font-weight: 700; font-size: 15px; letter-spacing: -.01em;
+  color: var(--fg); padding: 6px 4px; white-space: nowrap; margin-right: 4px;
+  transition: color .25s ease;
+}
+.topnav .brand:hover { text-decoration: none; color: var(--accent-dark); }
+.topnav .arxiv-btn { margin-left: auto; }
+@media (max-width: 760px) { .topnav .arxiv-btn { margin-left: 0; } }
+
+/* dark state - while the bar floats over the black splash hero */
+.topnav.on-dark {
+  background: rgba(10, 11, 14, .42);
+  border-bottom-color: rgba(255, 255, 255, .12);
+}
+.topnav.on-dark .brand { color: #fff; }
+.topnav.on-dark .brand:hover { color: #cdddff; }
+.topnav.on-dark .btn {
+  background: rgba(255, 255, 255, .07);
+  color: #fff;
+  border-color: rgba(255, 255, 255, .30);
+}
+.topnav.on-dark .btn:hover { background: rgba(255, 255, 255, .17); border-color: rgba(255, 255, 255, .55); }
+.topnav.on-dark .btn.primary { color: #fff; background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .60); }
+.topnav.on-dark .btn.primary:hover { background: rgba(255, 255, 255, .22); border-color: #fff; }
+.topnav.on-dark .btn .ico { opacity: .9; }
+.topnav.on-dark .btn .muted { color: rgba(255, 255, 255, .72); }
+
+/* ----------------------------- sections ---------------------------------- */
+
+section { padding: 26px 0; border-bottom: 1px solid var(--rule); scroll-margin-top: 56px; }
+section:last-of-type { border-bottom: none; }
+
+h2 {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  margin: 0 0 12px; letter-spacing: -.01em;
+}
+h3 { font-size: 16.5px; font-weight: 700; margin: 18px 0 6px; }
+p { margin: 0 0 11px; }
+
+.lead { font-size: 16.5px; }
+
+/* abstract: no box — sits inside the header block under the authors/affil,
+   text justified so each line runs full width */
+.abstract {
+  max-width: 760px; margin: 14px auto 0; padding: 0;
+  text-align: justify; text-justify: inter-word; hyphens: auto;
+  font-size: 14.5px; line-height: 1.6; color: var(--fg);
+  scroll-margin-top: 64px;   /* clear the fixed topnav when the nav jumps to #abstract */
+}
+
+em.term { font-style: italic; color: var(--accent-dark); font-weight: 600; }
+
+/* two-column flow for prose-heavy sections on wide screens */
+.cols2 { columns: 2; column-gap: 36px; }
+.cols2 > p { break-inside: avoid; margin-top: 0; }
+@media (max-width: 820px) { .cols2 { columns: 1; } }
+
+/* ----------------------------- figures ----------------------------------- */
+
+figure { margin: 14px 0 4px; text-align: center; }
+figure img { max-width: 100%; height: auto; border-radius: 7px; border: 1px solid var(--rule); background: #fff; }
+figure.plain img { border: none; }
+/* line-plot/composite paper figures: let them be wide */
+figure.wide img { max-width: 100%; }
+figcaption { font-size: 12.5px; color: var(--muted); margin-top: 7px; line-height: 1.45; text-align: left; }
+figcaption b, figcaption .fignum { color: var(--fg); }
+figcaption .fignum { font-weight: 700; }
+
+/* the standalone "Detailed overview" figure: roomier image + larger caption */
+.overview-fig { margin: 10px auto 0; max-width: 980px; }
+.overview-fig figcaption {
+  font-size: 15px; line-height: 1.55; color: var(--fg);
+  max-width: 880px; margin: 12px auto 0;
+}
+
+/* figure pairs side by side */
+.figrow { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 14px 0 4px; }
+.figrow figure { margin: 0; }
+@media (max-width: 760px) { .figrow { grid-template-columns: 1fr; } }
+
+.teaser { margin-top: 2px; }
+
+/* ====================== "in a nutshell" : simple flow diagram ============= */
+/*  problem  ->  [ step 1 | step 2 ]  ->  result                              */
+#nutshell { background: linear-gradient(180deg, #fafbfc 0%, #fff 100%); }
+.nutshell-diagram {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 6px; max-width: 920px; margin: 18px auto 6px;
+}
+.nut-box {
+  border: 2px solid #d8dbdf; border-radius: 12px; background: #fff;
+  padding: 18px 24px;
+}
+.nut-box p { margin: 0; font-size: 17.5px; line-height: 1.6; }
+.nut-box .nut-tag {
+  display: block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  font-weight: 700; color: var(--muted); margin-bottom: 7px;
+}
+.nut-box.problem { background: #fff6f4; border-color: #f3d6cf; }
+.nut-box.problem .nut-tag { color: #b2543f; }
+.nut-box.payoff  { background: var(--accent-soft); border-color: #cfe0f6; }
+.nut-box.payoff  .nut-tag { color: var(--accent-dark); }
+
+.nut-arrow { text-align: center; font-size: 24px; line-height: 1; color: var(--muted); margin: 2px 0; }
+
+/* the two "what we do" steps, side by side */
+.nut-steps2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.nut-box.step { position: relative; padding-top: 22px; }
+.nut-box.step .nut-step-num {
+  position: absolute; top: -14px; left: 20px;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 15px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.nut-box.step h4 { margin: 4px 0 7px; font-size: 18px; }
+.nut-box.step p { font-size: 16px; color: var(--muted); line-height: 1.55; }
+
+@media (max-width: 720px) {
+  .nut-steps2 { grid-template-columns: 1fr; gap: 24px; }
+  .nut-box { padding: 16px 18px; }
+  .nut-box p { font-size: 16px; }
+  .nut-box.step p { font-size: 15px; }
+}
+
+/* ----------------------------- contributions / steps --------------------- */
+
+.cards, .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 6px 0 2px; }
+.card, .step { border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+.step { background: var(--soft); }
+.card .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; margin-bottom: 6px;
+}
+.card h4, .step h4 { margin: 0 0 4px; font-size: 14.5px; }
+.card p, .step p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.step .tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+
+/* ----------------------------- interactive ------------------------------- */
+
+/* scroll-through (scrollytelling) toggle - drives the opening figure only */
+.scrollmode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 6px 0 4px; }
+.scrollmode-btn {
+  display: inline-flex; align-items: center; gap: 9px; flex: none;
+  padding: 6px 13px; border-radius: 7px; border: 1px solid #d4d7db;
+  background: #fff; color: var(--fg); font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.scrollmode-btn:hover { background: var(--soft); border-color: #b9bdc3; }
+.scrollmode-btn .sw {
+  position: relative; width: 26px; height: 15px; border-radius: 999px; background: #cdd1d6; transition: background .15s ease;
+}
+.scrollmode-btn .sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); transition: transform .15s ease;
+}
+.scrollmode-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-dark); }
+.scrollmode-btn[aria-pressed="true"] .sw { background: var(--accent); }
+.scrollmode-btn[aria-pressed="true"] .sw::after { transform: translateX(11px); }
+.scrollmode-hint { font-size: 12px; color: var(--muted); }
+
+/* wrapper inserted by main.js around the figure while scroll-through mode is on */
+.scrolly { position: relative; }
+body.scroll-mode .slider-row .playbtn { visibility: hidden; }
+body.scroll-mode input[type=range].morph { pointer-events: none; opacity: .85; }
+body.scroll-mode .scrolly > .interactive { z-index: 30; }
+/* while a figure is pinned, hide the rest of the page behind it so the page reads as "frozen" */
+body.scroll-pinned::before { content: ""; position: fixed; inset: 0; background: var(--bg); z-index: 20; }
+body.scroll-pinned .scrolly > .interactive { box-shadow: 0 12px 44px rgba(0,0,0,.14); }
+
+.interactive { border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px 12px; background: #fff; margin: 12px 0 4px; }
+.interactive.bare { border: 0; border-radius: 0; padding: 0; background: transparent; margin: 6px 0 4px; }   /* boxless: sit straight on the page */
+.interactive .badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 8px; margin-bottom: 6px;
+}
+.interactive h3 { margin: 0 0 4px; font-size: 15.5px; }
+.interactive .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+
+/* the panel row: 4 cells side by side */
+.deform-stage { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: start; }
+.deform-cell { position: relative; min-width: 0; }
+.deform-cell .lbl {
+  font-size: 11px; font-weight: 700; color: var(--fg); margin-bottom: 4px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-height: 14px;
+}
+.deform-cell .lbl .err { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.deform-cell .lbl .err.good { color: var(--accent-dark); }
+.deform-cell .lbl .err.bad  { color: #b23b3b; }
+.deform-frame {
+  position: relative; width: 100%; aspect-ratio: 1300 / 918;
+  border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; background: #fff;
+}
+#mr-stage .deform-frame { aspect-ratio: 470 / 525; }
+.deform-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0; opacity: 0; }
+.deform-frame img.on { opacity: 1; }
+#mr-stage .deform-frame img { transition: opacity .25s ease; }
+
+@media (max-width: 820px) { .deform-stage, #mr-stage.deform-stage { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .deform-stage, #mr-stage.deform-stage { grid-template-columns: 1fr; } }
+
+.slider-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.slider-row .ends { font-size: 11.5px; color: var(--muted); white-space: nowrap; text-align: center; line-height: 1.2; }
+.slider-row .playbtn {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #d4d7db; background: #fff;
+  color: var(--accent); font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.slider-row .playbtn:hover { background: var(--accent-soft); border-color: var(--accent); }
+input[type=range].morph {
+  -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--fill,0%), #e2e5e9 var(--fill,0%), #e2e5e9 100%);
+}
+input[type=range].morph::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--accent); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+input[type=range].morph::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: pointer; }
+.morph-readout { text-align: center; font-size: 12px; color: var(--muted); margin-top: 7px; }
+.morph-readout b { color: var(--fg); }
+
+/* "Inpainting methods": the FM / MAE real-CFD glyph canvases side by side
+   (stacking on narrow screens). The h3 + caption above each canvas get a fixed
+   height so both canvases - and the controls below them - line up vertically. */
+.fm-pair { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; margin: 4px 0; }
+.fm-pair .fm-col { flex: 1 1 360px; min-width: 0; margin: 0; display: flex; flex-direction: column; }
+.fm-pair .fm-col > h3  { min-height: 1.3em; margin-bottom: 4px; }
+.fm-pair .fm-col > .sub { min-height: 3.6em; }                  /* ~2 caption lines + the 10px bottom margin */
+.fm-stage { display: flex; justify-content: center; margin-top: 0; }
+#fm-canvas, #mae-canvas {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--rule); border-radius: 7px; background: #fff;
+}
+@media (max-width: 720px) {                                     /* stacked: drop the reserved heights */
+  .fm-pair .fm-col > h3, .fm-pair .fm-col > .sub { min-height: 0; }
+}
+
+/* "Local geometry editing": one .dfm-artery per pair (2-up grid). The geometry
+   cell stacks two PNGs (state-1 base + the clipped state-2 on top); the velocity
+   cell is a <canvas> that composites two pre-baked states. A draggable curtain
+   (.dfm-handle, one per frame, all at the shared fraction) wipes them: left of
+   the divider = state 1 (original geometry + GT field), right = state 2
+   (deformed geometry + the inpainting prediction). */
+.deform2-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 20px; }
+.dfm-artery { min-width: 0; }
+.dfm-artery > .lbl { font-size: 11px; font-weight: 700; color: var(--fg); margin-bottom: 5px; }
+.dfm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dfm-cell { min-width: 0; }
+.dfm-cell > .cap { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; margin-bottom: 3px; }
+.dfm-cell > .cap .dfm-side { font-weight: 700; }
+.dfm-cell > .cap .dfm-side.l { color: var(--accent-dark); }
+.dfm-cell > .cap .dfm-side.r { color: #b23b3b; }
+.dfm-frame {
+  position: relative; width: 100%; border: 1px solid var(--rule); border-radius: 7px;
+  overflow: hidden; background: #fff; cursor: ew-resize; touch-action: none; user-select: none;
+}
+.dfm-frame canvas { display: block; width: 100%; height: auto; pointer-events: none; }
+.dfm-frame .dfm-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0; pointer-events: none; }
+.dfm-frame .dfm-img-top { clip-path: inset(0 0 0 50%); }
+.dfm-frame .dfm-handle {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-1px);
+  background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); pointer-events: none;
+}
+.dfm-frame .dfm-handle::after {
+  content: "\21C6"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 22px; height: 22px; border-radius: 50%; background: #fff; color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0,0,0,.22);
+}
+.dfm-hint { font-size: 12px; color: var(--muted); margin: 10px 0 2px; }
+.dfm-fallback { font-size: 12.5px; color: var(--muted); margin: 10px 0 2px; }
+@media (max-width: 900px) { .deform2-grid { grid-template-columns: 1fr; } }
+@media (max-width: 460px) { .dfm-row { grid-template-columns: 1fr; gap: 10px; } }
+
+/* before/after wipe */
+.wipe { position: relative; width: 100%; max-width: 760px; margin: 0 auto; overflow: hidden; border: 1px solid var(--rule); border-radius: 9px; user-select: none; touch-action: none; }
+.wipe img { display: block; width: 100%; height: auto; border: 0; }
+.wipe .top { position: absolute; inset: 0; width: 100%; clip-path: inset(0 0 0 50%); }
+.wipe .handle { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.18); cursor: ew-resize; transform: translateX(-1px); }
+.wipe .handle::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 26px; height: 26px; border-radius: 50%; background: #fff; color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.22); }
+.wipe .tag { position: absolute; top: 8px; font-size: 11px; font-weight: 700; color: #fff; background: rgba(28,30,33,.62); padding: 2px 7px; border-radius: 5px; }
+.wipe .tag.l { left: 8px; } .wipe .tag.r { right: 8px; }
+
+/* ----------------------------- table ------------------------------------- */
+
+.tablewrap { overflow-x: auto; margin: 12px 0 4px; }
+table.results { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.results caption { caption-side: top; text-align: left; color: var(--muted); font-size: 12.5px; margin-bottom: 7px; }
+table.results th, table.results td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.results th:first-child, table.results td:first-child { text-align: left; }
+table.results thead th { border-bottom: 2px solid #d4d7da; font-weight: 700; }
+table.results tbody tr.section td { text-align: left; font-style: italic; color: var(--muted); background: var(--soft); font-size: 12px; padding-top: 8px; padding-bottom: 4px; }
+table.results td.best { font-weight: 700; color: var(--accent-dark); }
+table.results tr.ours td:first-child { font-weight: 700; }
+table.results tr.ours { background: var(--accent-soft); }
+
+/* ----------------------------- bibtex ------------------------------------ */
+
+.bibtex-box { position: relative; background: #1c1e21; color: #e8e8e8; border-radius: 10px; padding: 14px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; overflow-x: auto; }
+.bibtex-box pre { margin: 0; white-space: pre; }
+.copy-btn { position: absolute; top: 9px; right: 9px; background: rgba(255,255,255,.12); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; font-family: var(--sans); }
+.copy-btn:hover { background: rgba(255,255,255,.22); }
+
+/* ----------------------------- misc -------------------------------------- */
+
+ul.tight { margin: 0 0 11px; padding-left: 20px; }
+ul.tight li { margin-bottom: 3px; }
+ul.tight.cols2 { padding-left: 0; }
+ul.tight.cols2 li { margin-left: 20px; }
+
+footer { padding: 22px 0 36px; text-align: center; color: var(--muted); font-size: 12px; }
+footer a { color: var(--muted); text-decoration: underline; }
+
+/* ----------------------------- responsive / phone ----------------------- */
+
+@media (max-width: 760px) {
+  .cards, .steps { grid-template-columns: 1fr; }
+  .hero { padding: 22px 0 12px; }
+  .hero-pad { padding-top: 22px; }
+
+  /* section-nav: one horizontally-scrollable row instead of a tall wrapped block */
+  .topnav .btns {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+            mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+  }
+  .topnav .btns::-webkit-scrollbar { display: none; }
+  .topnav .btn, .topnav .brand { flex: 0 0 auto; white-space: nowrap; }
+  .topnav .arxiv-btn { margin-left: 0; }
+
+  section { padding: 22px 0; scroll-margin-top: 54px; }
+
+  h2 { font-size: 20px; }
+  .lead { font-size: 15.5px; }
+  .authors { font-size: 14.5px; line-height: 1.6; }
+  .affil { font-size: 12px; }
+
+  /* keep the slider track usable on narrow screens */
+  .slider-row { gap: 9px; }
+  .slider-row .ends { font-size: 10.5px; }
+}
+
+@media (max-width: 480px) {
+  .wrap { padding: 0 14px; }
+  body { font-size: 15px; }
+  .interactive { padding: 12px 12px 10px; }
+  .abstract { text-align: left; hyphens: manual; }
+  figcaption { font-size: 12px; }
+  .slider-row .playbtn { width: 26px; height: 26px; }
+}
+
+/* ============================ splash / intro ============================== */
+/* black "Inpainting Physics" + TL;DR hero at the top of the page: the bare    */
+/* aneurysm geometry, with the velocity field fading in over the sac as you    */
+/* scroll past it (opacity driven by main.js).                                 */
+.splash {
+  position: relative;
+  height: 185vh;                        /* scroll-scrub zone - the stage stays pinned for ~0.85 screen */
+  background: #000;
+  padding: 0;
+  border: none;
+}
+.splash-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(18px, 4vh, 44px);
+  padding: 40px 24px;
+  overflow: hidden;
+  text-align: center;
+  color: #fff;
+}
+.splash-head {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column; align-items: center;
+  gap: clamp(10px, 2vh, 22px);
+  max-width: 56rem;
+}
+.splash-stage::before {                 /* faint glow so the geometry doesn't float in a void */
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(58% 56% at 50% 48%, rgba(74,104,206,.16), rgba(0,0,0,0) 70%);
+  pointer-events: none;
+}
+.splash-wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2.1rem, 6vw, 4.2rem);
+  letter-spacing: .04em;
+  line-height: 1.04;
+  color: #fff;
+}
+.splash-sub {                            /* descriptive subtitle under the wordmark */
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: rgba(255, 255, 255, .66);
+  font-size: clamp(1.12rem, 2.6vw, 1.75rem);
+  letter-spacing: .015em;
+  line-height: 1.32;
+}
+.splash-art {
+  position: relative; z-index: 1;
+  width: min(94vw, 920px, calc(57vh * 1200 / 998));   /* leave room for the wordmark + subtitle above */
+  aspect-ratio: 1200 / 998;
+  filter: drop-shadow(0 16px 46px rgba(80,110,210,.20));
+  /* >>> the only knob: how much of the RIGHT edge fades out (as a % of the figure width).
+     It's applied to BOTH flow layers - the always-on outflow stub *and* the fading interior -
+     so the right edge looks identical whether or not the interior has faded in.
+     Bigger = more fade; 0 = hard edge. Keep it below the 5% inner-stop in --bc-right. */
+  --rfade: 3%;
+}
+.splash-geo, .splash-flow, .splash-flow-bc {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
+.splash-flow {                          /* the interior flow - opacity set by main.js from scroll */
+  opacity: 0;
+  will-change: opacity;
+  /* fade out at the right edge, matching --bc-right's outer fade so it doesn't pop in mid-scroll */
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #fff var(--rfade) 100%);
+          mask-image: linear-gradient(to left, transparent 0, #fff var(--rfade) 100%);
+}
+/* the inflow + outflow of the same quiver, kept along the left / right / top
+   edges and always visible (so the "boundary conditions" stay put while the
+   inside / aneurysm sac is "inpainted").
+   Each band's stops:  transparent 0  |  #fff <outerFade> <innerEdge>%  |  transparent <fadeOut>%
+     <outerFade>  = how far in before fully opaque  ->  the right one uses var(--rfade) so it stays
+                    in sync with .splash-flow's right fade; left & top are still hard at the outer edge
+     <innerEdge>% = how deep the kept band reaches before it fades toward the interior
+     <fadeOut>%   = where the band is fully gone toward the interior */
+.splash-flow-bc {
+  --bc-left:  linear-gradient(to right,  #fff 0 10%, transparent 20%);
+  --bc-right: linear-gradient(to left,   transparent 0, #fff var(--rfade) 5%, transparent 15%);
+  --bc-top:   linear-gradient(to bottom, #fff 0 5%, transparent 10%);
+  -webkit-mask-image: var(--bc-left), var(--bc-right), var(--bc-top);
+          mask-image: var(--bc-left), var(--bc-right), var(--bc-top);
+  -webkit-mask-composite: source-over;   /* union of the three edge bands */
+          mask-composite: add;
+}
+.splash-caption {                        /* line under the art: what the figure shows */
+  position: relative; z-index: 2;
+  margin: 0;
+  max-width: 44rem;
+  color: rgba(255,255,255,.58);
+  font-size: clamp(.92rem, 1.7vw, 1.15rem);
+  letter-spacing: .015em;
+  line-height: 1.42;
+}
+.splash-scroll {
+  position: absolute;
+  left: 50%; bottom: clamp(14px, 3vh, 30px);
+  transform: translateX(-50%);
+  color: rgba(255,255,255,.5);
+  font-size: 24px; line-height: 1;
+  text-decoration: none; z-index: 2;
+  animation: splash-bob 1.9s ease-in-out infinite;
+}
+.splash-scroll:hover { color: #fff; text-decoration: none; }
+@keyframes splash-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-scroll { animation: none; }
+}

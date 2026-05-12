@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inpainting physics: self-supervised learning for context-driven fluid simulation</title>
+<meta name="description" content="We reformulate steady CFD inference as an inpainting problem: learn a self-supervised prior over velocity fields and impose boundary conditions only at inference time. Latent flow matching and masked autoencoders on a local neighbourhood tokeniser, evaluated on intracranial aneurysm hemodynamics." />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Inpainting physics: self-supervised learning for context-driven fluid simulation" />
+<meta property="og:description" content="Recasting CFD emulation as context-conditioned inpainting: a reusable flow prior instead of a task-specific forward surrogate." />
+<meta property="og:image" content="static/images/overview.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7.5' fill='%231f5fbf'/%3E%3Cpath d='M4 21.5 C 9.5 6.5 14 8.5 16 16 S 22.5 25.5 28 10.5' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round'/%3E%3Ccircle cx='5.4' cy='23.2' r='1.8' fill='white'/%3E%3Ccircle cx='26.6' cy='9' r='1.8' fill='white'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="static/css/style.css" />
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- SPLASH: black "Inpainting physics" hero above the paper: bare geometry, -->
+<!--   then the velocity field fades in over the sac as you scroll past it.   -->
+<!-- ====================================================================== -->
+<section class="splash" id="splash" aria-label="Inpainting physics">
+  <div class="splash-stage">
+    <div class="splash-head">
+      <div class="splash-wordmark">Inpainting&nbsp;physics</div>
+      <p class="splash-sub">Self&#8209;supervised learning for context&#8209;driven fluid simulation</p>
+    </div>
+    <div class="splash-art" aria-hidden="true">
+      <img class="splash-geo"     src="static/images/hero/geometry.png" alt="" decoding="async" fetchpriority="high" />
+      <img class="splash-flow"    src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- interior: faded in on scroll -->
+      <img class="splash-flow-bc" src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- inflow + outflow: always shown -->
+    </div>
+    <p class="splash-caption">Inlet&nbsp;&amp;&nbsp;outlet stay fixed, the interior flow is inpainted.</p>
+    <a class="splash-scroll" href="#nutshell" aria-label="Scroll to the paper">&#x25BE;</a>
+  </div>
+</section>
+
+<!-- section nav: fixed to the very top at all times; dark while it floats over
+     the black splash, fades to the light style over the page (main.js toggles .on-dark) -->
+<nav class="topnav on-dark" aria-label="Section navigation">
+  <div class="wrap">
+    <div class="btns">
+      <a class="brand" href="#">Inpainting physics</a>
+      <a class="btn" href="#overview">Overview</a>
+      <a class="btn" href="#interactive">Methods</a>
+      <a class="btn" href="#paper">Abstract</a>
+      <a class="btn" href="#bibtex">BibTeX</a>
+      <a class="btn primary arxiv-btn" href="https://arxiv.org/abs/2605.08832" target="_blank" rel="noopener"><span class="ico">&#9656;</span> arXiv</a>
+      <a class="btn primary" href="https://arxiv.org/pdf/2605.08832" target="_blank" rel="noopener"><span class="ico">&#9656;</span> PDF</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ====================================================================== -->
+<!-- IN A NUTSHELL  (plain-language diagram — first content below the splash) -->
+<!-- ====================================================================== -->
+<section id="nutshell" class="hero-pad">
+  <div class="wrap">
+    <h2>In a nutshell</h2>
+
+    <div class="nutshell-diagram">
+
+      <!-- Problem -->
+      <div class="nut-box problem">
+        <span class="nut-tag">Problem</span>
+        <p>Machine&#8209;learning surrogates for fluid dynamics perform well on narrow tasks but they fail when faced with new geometries or boundary conditions.</p>
+      </div>
+
+      <div class="nut-arrow" aria-hidden="true">&#8595;</div>
+
+      <!-- What we do: two steps side by side -->
+      <div class="nut-steps2">
+        <div class="nut-box step">
+          <span class="nut-step-num">1</span>
+          <h4>Learn the fluid flow</h4>
+          <p>We train a model on many velocity fields, with no boundary conditions, so it learns what plausible flow looks like.</p>
+        </div>
+        <div class="nut-box step">
+          <span class="nut-step-num">2</span>
+          <h4>Fix what is known, inpaint the rest</h4>
+          <p>At inference we fix the known boundaries, such as inflow and outflow, or a region kept from a previous simulation, and the model inpaints the rest.</p>
+        </div>
+      </div>
+
+      <div class="nut-arrow" aria-hidden="true">&#8595;</div>
+
+      <!-- Payoff -->
+      <div class="nut-box payoff">
+        <span class="nut-tag">Result</span>
+        <p>One model, no retraining: it generalises to unseen geometries and flow speeds, and reuses unchanged context for local geometry edits.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 3a · LOCAL GEOMETRY EDITING  (example application, right after the nutshell) -->
+<!-- ====================================================================== -->
+<section id="local-editing">
+  <div class="wrap">
+    <h2>Example application: Local geometry editing</h2>
+    <p class="sub">
+      When only a small region of a vessel changes (an aneurysm grown locally), most of an existing simulation stays valid: a forward surrogate must redo the whole field, the inpainting model only fills the edited region. Drag the divider on any artery to compare the two states (the divider moves on all of them together). <strong>Left:</strong> the original vessel with its ground-truth CFD field. <strong>Right:</strong> the same vessel with the aneurysm grown, showing the inpainting prediction. The edited region is in red.
+    </p>
+    <div class="interactive">
+      <div class="deform2-grid" id="dfm-grid"></div>
+      <p class="dfm-hint">Drag the white divider to wipe between ground truth (left) and the inpainting prediction on the deformed geometry (right).</p>
+      <p class="dfm-fallback" id="dfm-fallback" hidden>Interactive deformation figure unavailable (data not loaded).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 3b · DETAILED OVERVIEW  (the three-stage figure)                        -->
+<!-- ====================================================================== -->
+<section id="overview">
+  <div class="wrap">
+    <h2>Detailed overview</h2>
+    <figure class="plain overview-fig">
+      <img src="static/images/overview.png" alt="Three-stage overview: (1) tokenise velocity fields into local ball latent tokens; (2) self-supervised training with latent flow matching or a latent masked autoencoder; (3) context-driven inpainting that enforces boundary conditions and supports local geometry edits." loading="lazy" decoding="async" />
+      <figcaption>
+        <b>Inpainting physics.</b>
+        (1)&nbsp;We tokenise raw velocity fields into local ball-shaped latent representations.
+        (2)&nbsp;We train a self-supervised model on these tokenised velocity fields using latent flow matching or a masked autoencoder.
+        (3)&nbsp;At inference, boundary conditions are explicitly enforced by fixing known regions like inflow and outflow during inpainting, enabling generalisation to unseen geometries and flow conditions, preserving local flow structure.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 5 · INTERACTIVE                                                         -->
+<!-- ====================================================================== -->
+<section id="interactive">
+  <div class="wrap">
+    <h2>Inpainting methods demo</h2>
+    <p class="sub">
+      We fix the boundaries at inlet and outlet and inpaint the rest based on the context. For the inference, we compare two different approaches: <b>flow matching</b> integrates the masked region from noise to flow, implicitly conditioned on the fixed inlet/outlet; <b>masked auto-encoding</b> predicts the masked region in a few steps, working inward from the fixed context. Drag to see the conceptual inpainting progress over time.
+    </p>
+    <div class="interactive bare">
+      <div class="fm-pair">
+        <div class="fm-col">
+          <h3>Flow matching</h3>
+
+          <div class="fm-stage">
+            <canvas id="fm-canvas" aria-label="flow-matching inpainting on a real aneurysm CFD field: the coral-outlined masked region is integrated from noise toward the true simulated flow as the integration time advances; the surrounding field, geometry and inlet/outlet stay fixed as context"></canvas>
+          </div>
+          <div class="slider-row">
+            <button class="playbtn" id="fm-play" aria-label="play / pause">&#9654;</button>
+            <span class="ends">noise<br><span style="font-size:10px;opacity:.8">t&nbsp;=&nbsp;0</span></span>
+            <input type="range" class="morph" id="fm-slider" min="0" max="1" step="0.001" value="0" aria-label="flow-matching integration time" />
+            <span class="ends">solution<br><span style="font-size:10px;opacity:.8">t&nbsp;=&nbsp;1</span></span>
+          </div>
+          <div class="morph-readout" id="fm-readout">Integration time <b>t = 0.00</b></div>
+        </div>
+
+        <div class="fm-col">
+          <h3>Iterative masked auto-encoder</h3>
+
+          <div class="fm-stage">
+            <canvas id="mae-canvas" aria-label="iterative masked-autoencoder inpainting on a masked region of a real aneurysm CFD field: the velocity field is filled from the outer ring inward in five discrete prediction steps; the surrounding field, geometry and inlet/outlet stay fixed as context"></canvas>
+          </div>
+          <div class="slider-row">
+            <button class="playbtn" id="mae-play" aria-label="play / pause">&#9654;</button>
+            <span class="ends">masked<br><span style="font-size:10px;opacity:.8">step&nbsp;0</span></span>
+            <input type="range" class="morph" id="mae-slider" min="0" max="5" step="1" value="0" aria-label="iterative MAE prediction step" />
+            <span class="ends">solution<br><span style="font-size:10px;opacity:.8">step&nbsp;5</span></span>
+          </div>
+          <div class="morph-readout" id="mae-readout">Step <b>0 of 5</b></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 6b · RESULTS  — commented out for now; markup kept for easy restore.    -->
+<!-- ====================================================================== -->
+<!--
+  ======================================================================
+  "Results" section (one figure: the main inpainting comparison).
+  Currently hidden from the live page.
+  ======================================================================
+
+<section id="results">
+  <div class="wrap">
+    <h2>Results</h2>
+    <p class="sub">
+      In-distribution, supervised surrogates win at the sparsest inlet/outlet conditioning, but the inpainting models keep improving as more known context is supplied — L-MAE is best on most metrics once any field context is available. See the paper for out-of-distribution, dataset-shift and local-editing results.
+    </p>
+    <figure>
+      <img src="static/images/res_mask_frac.jpg" alt="Left: two example aneurysms, each shown with the masked region at 20/60/99% and the L-MAE and L-FM-Physics reconstructions with per-panel nMSE. Right: four metric panels (nMSE, cosine similarity, vorticity, divergence) versus mask fraction for L-FM variants, L-MAE variants, supervised-Att, supervised-MP and naive baselines." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Figure.</span> <b>L-MAE and L-FM improve as more context becomes available.</b> Left: qualitative reconstructions at mask fractions 20/60/99% on two example shapes (masked region in red). Right: metrics vs. mask fraction (Aneumo test split, in-distribution mass flow $m=3$); higher mask fraction = less context.</figcaption>
+    </figure>
+  </div>
+</section>
+
+  ======================================================================
+  end "Results" section
+  ======================================================================
+-->
+
+<!--
+  ======================================================================
+  Trimmed from the live page (the method, results, and data & evaluation
+  sections). The page now runs splash → in-a-nutshell → contribution →
+  interactive → local-editing → results → paper (title/authors/abstract +
+  detailed overview + TL;DR) → BibTeX. (#takeaways and #interactive-more
+  are commented out below.) The full write-up lives in the paper.
+  Markup kept here for reference / easy restore.
+  ======================================================================
+
+<section id="method">
+  <div class="wrap">
+    <h2>Method</h2>
+    <p>
+      We formulate CFD prediction as conditional completion under a self-supervised velocity-field prior. The model is trained on complete velocity fields&nbsp;$v$ <em>without</em> boundary-condition labels (mass flow, inlet profiles, outlet constraints). At inference, known regions&nbsp;$\mathcal{K}$ are fixed and the model reconstructs the masked region&nbsp;$\mathcal{U}$, i.e. it estimates $v_{\mathcal U}\mid v_{\mathcal K}$.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="tag">Stage 1</div>
+        <h4>Neighbourhood tokeniser</h4>
+        <p>Farthest-point sampling picks $P=2500$ ball centres; each ball gathers its 512 nearest points. A PointNet-style encoder + max-pool maps every ball to one token $z_j\in\mathbb{R}^{256}$. The decoder broadcasts $z_j$ to query points with their local coordinates and wall distance; overlapping balls are merged by inverse-distance weighting. Trained on its own with an MSE reconstruction loss.</p>
+      </div>
+      <div class="step">
+        <div class="tag">Stage 2</div>
+        <h4>Self-supervised model</h4>
+        <p>A global model is trained on the $2500\times256$ token field. <b>L-FM:</b> a DiT-style transformer trained with rectified flow matching from Gaussian noise to the data distribution. <b>L-MAE:</b> a masked autoencoder that reconstructs masked tokens from visible ones. Neither receives mass flow, inlet/outlet conditions, or a global geometry descriptor; only token positions and wall distances.</p>
+      </div>
+      <div class="step">
+        <div class="tag">Stage 3</div>
+        <h4>Explicit boundary inpainting</h4>
+        <p>Known velocities are encoded by the tokeniser and held fixed; the self-supervised model fills the missing tokens, which the decoder turns back into a full-resolution field. The <em>same</em> pretrained model serves sparse inlet/outlet conditioning, rich measured context, and local geometry edits, just by changing which tokens are fixed.</p>
+      </div>
+    </div>
+
+    <h3>Inference strategies we compare</h3>
+    <ul class="tight">
+      <li><strong>L-MAE:</strong> the masked region is predicted in a single forward pass.</li>
+      <li><strong>L-MAE-Iterative:</strong> the mask is filled progressively from the known boundary over 5 steps.</li>
+      <li><strong>L-FM-Euler:</strong> 20-step Euler integration of the flow from Gaussian noise, with the boundary fixed throughout.</li>
+      <li><strong>L-FM-Euler-Zero:</strong> same, but the masked tokens start at zero instead of noise.</li>
+      <li><strong>L-FM-Physics:</strong> flow-matching steps are projected onto a zero-divergence (incompressible) constraint in world space at each step, guiding integration along physically plausible paths.</li>
+    </ul>
+
+    <h3>Baselines</h3>
+    <p>
+      <strong>Supervised-Att:</strong> AB-UPT, an anchor-branched universal physics transformer (velocity branch only); receives positions, wall distance, inlet distance, and the mass-flow parameter.
+      <strong>Supervised-MP:</strong> a PointNet++-style message-passing surrogate with the same inputs.
+      Plus naive baselines: <strong>mean-inpainting</strong> and distance-based <strong>interpolation</strong>.
+      All learned models are sized to ~30M parameters and trained for two days on a single A100-80GB.
+    </p>
+  </div>
+</section>
+
+<section id="results">
+  <div class="wrap">
+    <h2>Results</h2>
+
+    <h3>1 &nbsp;·&nbsp; Neighbourhood tokens accurately represent velocity fields</h3>
+    <p>
+      The tokeniser compresses each ~200k-point field to 2500 local latent tokens while keeping reconstruction error low across mass flows (even out-of-distribution ones), and far below random downsampling + interpolation at the same budget. On the held-out AneuG dataset the reconstruction nMSE is $(0.21\pm0.01)\%$. Since every later model lives in this latent space, the tokeniser's reconstruction quality is an approximate lower bound for the inpainting models.
+    </p>
+    <figure>
+      <img src="static/images/NT.jpg" alt="Left: four metric panels (nMSE, cosine similarity, vorticity, divergence) versus mass flow for the tokeniser vs interpolation baselines on Aneumo and AneuG. Right: velocity field, latent ball tokens, and reconstruction examples on both datasets." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Figure&nbsp;2.</span> <b>The neighbourhood tokeniser has low reconstruction error across all mass flows.</b> 2500 latent tokens beat random downsampling + interpolation on every metric, even out-of-distribution. Right: the latent ball representation and the reconstruction on Aneumo and the held-out AneuG dataset (AneuG reconstruction nMSE $(0.21\pm0.01)\%$).</figcaption>
+    </figure>
+
+    <h3>2 &nbsp;·&nbsp; Explicit boundary-conditioned inpainting recovers velocity fields</h3>
+    <p>
+      At an in-distribution mass flow, the supervised surrogates (trained directly for forward prediction and given the mass-flow parameter) are strongest under the sparsest (99% masked) inlet/outlet conditioning. The inpainting models behave differently: they keep improving as more field context is provided. L-FM struggles with very large masks but benefits from context, and physics guidance reduces divergence and vorticity error. L-MAE is best aligned with the inference task: slightly behind the supervised baseline at the sparsest setting, but best on most metrics once additional context is available.
+    </p>
+    <figure>
+      <img src="static/images/res_mask_frac.jpg" alt="Left: two example aneurysms, each shown with the masked region at 20/60/99% and the L-MAE and L-FM-Physics reconstructions with per-panel nMSE. Right: four metric panels (nMSE, cosine similarity, vorticity, divergence) versus mask fraction for L-FM variants, L-MAE variants, supervised-Att, supervised-MP and naive baselines." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Figure&nbsp;3.</span> <b>Supervised models are best on forward prediction in-distribution; L-MAE and L-FM improve with context.</b> Left: qualitative reconstructions at mask fractions 20/60/99% on two example shapes (the masked region is shown in red). Right: metrics vs. mask fraction (Aneumo test split, in-distribution mass flow $m=3$); higher mask fraction = less context. The inpainting advantage grows as more known regions become available.</figcaption>
+    </figure>
+
+    <h3>3 &nbsp;·&nbsp; Inpainting generalises better under boundary-condition and dataset shift</h3>
+    <p>
+      Forward surrogates must extrapolate in an explicit conditioning space such as total mass flow. Trained on mass flows 2&ndash;3.5 and evaluated 1&ndash;4, both supervised baselines remain accurate in-range but collapse out-of-distribution, dramatically at $m=1$, where they fail to extrapolate the expected linear mean-velocity scaling. In the inpainting formulation, an unseen mass flow is just a low-velocity boundary region to be completed. Under full dataset shift (the external AneuG set: different geometries, solver stack, mesh resolution, non-Newtonian rheology) the supervised surrogates degrade strongly and no longer reliably beat naive baselines, while L-MAE is the most robust method and the only one that consistently improves over the naive baselines across mask fractions.
+    </p>
+    <figure>
+      <img src="static/images/res_OOD.jpg" alt="Top: qualitative flow predictions for supervised-Att, supervised-MP, L-MAE and L-MAE difference, across out-of-distribution and training-range mass flows. Bottom-left: nMSE and mean velocity versus mass flow, with the training range shaded. Right: nMSE versus mask fraction at Aneumo m=1 and on the external AneuG test set." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Figure&nbsp;4.</span> <b>The best supervised model fails out-of-distribution; L-MAE stays solid, especially with context.</b> Left: performance over all mass flows; supervised-Att fails to extrapolate the expected linear mean-velocity scaling OOD (worst at $m=1$). Right: nMSE for varied context at $m=1$ and on the external AneuG test set. Models were trained only on mass flows 2&ndash;3.5.</figcaption>
+    </figure>
+
+    <h3>4 &nbsp;·&nbsp; Local geometry editing benefits from reusable global context</h3>
+    <p>
+      When only a small region changes (here, modelling the growth of an aneurysm) most of an existing high-fidelity simulation is still valid. A forward surrogate must redo the whole edited field; our model fixes the unchanged region and only infers the modified part. Inside the edited mask, L-MAE cuts nMSE from $72.97\%$ (Supervised-Att) to $26.43\%$ and lifts cosine similarity from $47.3\%$ to $80.5\%$. On the full sample, where the unchanged part is preserved by construction, full-field nMSE drops from $35.81\%$ to $4.52\%$. The flow-matching models struggle here: global noise integration has trouble strictly honouring narrow, high-frequency spatial boundary constraints, whereas L-MAE's objective directly optimises conditional completion from partial tokens.
+    </p>
+    <figure>
+      <img src="static/images/deformation_paper.jpg" alt="Two aneurysm examples (two rows each): ground-truth source flow, the deformed shape with the edited region highlighted in red, and difference-to-ground-truth maps for L-MAE and the supervised model, with per-panel nMSE." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Figure&nbsp;5.</span> <b>Inpainting local geometry edits benefits from global context.</b> Two example geometries deformed to model aneurysm growth. By generously masking the area around the edit and conditioning on the original simulation, L-MAE matches the reference far better than a neural surrogate that re-simulates the full geometry from scratch. Shown: difference to ground truth for L-MAE and supervised-Att, with per-panel nMSE.</figcaption>
+    </figure>
+
+    <figure>
+      <img src="static/images/App_OOD.jpg" alt="Eight metric panels: nMSE, cosine similarity, vorticity and divergence versus mask fraction, on the AneuG dataset and on Aneumo at m=1, for L-FM variants, L-MAE, supervised baselines and naive baselines." loading="lazy" decoding="async" />
+      <figcaption><span class="fignum">Appendix figure.</span> Full metric breakdown under shift: AneuG (left) and Aneumo $m=1$ (right). Across mask fractions, L-MAE is the most robust learned method and the only one that consistently improves over the naive baselines, while the supervised forward surrogates degrade strongly. (Paper appendix; further L-FM integration schemes are studied there too.)</figcaption>
+    </figure>
+
+    <div class="tablewrap">
+      <table class="results">
+        <caption><b>Table 1.</b> Quantitative results for small geometry edits, evaluated on the masked region and on the full simulation. Mean&nbsp;±&nbsp;standard error; best per block in <b>bold</b>.</caption>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>nMSE&nbsp;&darr; (%)</th>
+            <th>CosSim&nbsp;&uarr; (%)</th>
+            <th>divergence&nbsp;&darr;</th>
+            <th>vorticity&nbsp;&darr;</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="section"><td colspan="5">Inside mask</td></tr>
+          <tr><td>Supervised-Att</td><td>72.97&nbsp;±&nbsp;9.81</td><td>47.30&nbsp;±&nbsp;4.48</td><td>0.34&nbsp;±&nbsp;0.01</td><td>1.18&nbsp;±&nbsp;0.06</td></tr>
+          <tr><td>L-FM-Zero</td><td>89.25&nbsp;±&nbsp;19.69</td><td>46.63&nbsp;±&nbsp;6.03</td><td>0.24&nbsp;±&nbsp;0.01</td><td>1.22&nbsp;±&nbsp;0.12</td></tr>
+          <tr><td>L-FM-Physics</td><td>62.73&nbsp;±&nbsp;14.56</td><td>57.94&nbsp;±&nbsp;5.87</td><td class="best">0.21&nbsp;±&nbsp;0.01</td><td>1.09&nbsp;±&nbsp;0.10</td></tr>
+          <tr class="ours"><td>L-MAE</td><td class="best">26.43&nbsp;±&nbsp;4.19</td><td class="best">80.49&nbsp;±&nbsp;3.60</td><td>0.22&nbsp;±&nbsp;0.01</td><td class="best">0.73&nbsp;±&nbsp;0.03</td></tr>
+          <tr class="section"><td colspan="5">Full sample</td></tr>
+          <tr><td>Supervised-Att</td><td>35.81&nbsp;±&nbsp;2.97</td><td>72.49&nbsp;±&nbsp;1.16</td><td>0.29&nbsp;±&nbsp;0.01</td><td>0.97&nbsp;±&nbsp;0.02</td></tr>
+          <tr><td>L-FM-Zero</td><td>7.88&nbsp;±&nbsp;1.57</td><td>88.35&nbsp;±&nbsp;1.27</td><td>0.20&nbsp;±&nbsp;0.001</td><td>0.42&nbsp;±&nbsp;0.03</td></tr>
+          <tr><td>L-FM-Physics</td><td>7.14&nbsp;±&nbsp;1.55</td><td>90.10&nbsp;±&nbsp;1.25</td><td class="best">0.19&nbsp;±&nbsp;0.01</td><td>0.42&nbsp;±&nbsp;0.03</td></tr>
+          <tr class="ours"><td>L-MAE</td><td class="best">4.52&nbsp;±&nbsp;0.83</td><td class="best">94.41&nbsp;±&nbsp;0.72</td><td>0.19&nbsp;±&nbsp;0.01</td><td class="best">0.34&nbsp;±&nbsp;0.02</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="data">
+  <div class="wrap">
+    <h2>Data &amp; evaluation</h2>
+    <div class="cols2">
+      <p>
+      We train and evaluate on the Aneumo dataset of steady-state intracranial-aneurysm fluid simulations: 85,280 samples over 8 mass flows. We train on mass flows $\{2, 2.5, 3, 3.5\}$ and hold out $\{1, 1.5, 3.75, 4\}$ for testing, with a sequential split (to avoid leakage between geometrically similar neighbours) and evaluation on a uniformly sampled subset of 100 test cases. We additionally use the transient AneuG dataset (averaged over time, with a non-Newtonian rheology and a different solver stack) strictly as a held-out test set.
+    </p>
+    <p>
+      Metrics: <strong>nMSE</strong> (normalised mean-squared velocity error), <strong>cosine similarity</strong> (directional agreement, ignoring scale), <strong>normalised divergence</strong> (violation of the incompressibility / continuity constraint, estimated from local least-squares Jacobians), and <strong>normalised vorticity RMSE</strong> (agreement of rotational structure). Together these separate numerical agreement with the reference solver from physically relevant properties of the reconstructed field. We report standard error over the test set.
+    </p>
+    </div>
+  </div>
+</section>
+
+  ======================================================================
+  end trimmed sections
+  ======================================================================
+-->
+
+<!-- ====================================================================== -->
+<!-- 6 · TAKEAWAYS / LIMITATIONS  — commented out for now; kept for restore. -->
+<!-- ====================================================================== -->
+<!--
+  ======================================================================
+  "Takeaways & limitations" section. Currently hidden from the live page.
+  ======================================================================
+
+<section id="takeaways">
+  <div class="wrap">
+    <h2>Takeaways &amp; limitations</h2>
+    <div class="cols2">
+      <p>
+      Self-supervised inpainting can act as a <strong>reusable CFD prior</strong>: a model trained only to complete velocity fields can be conditioned at inference time on arbitrary known regions of the solution, whether sparse boundary conditions, partial measurements, or unchanged regions from a previous run. This is most useful precisely when the inference-time conditioning pattern differs from the supervision a conventional surrogate was trained on. In-distribution and with only sparse inlet/outlet context, a supervised forward surrogate is still highly competitive.
+    </p>
+    <p>
+      <b>Scope.</b> We study steady internal flows and model only the velocity field; pressure, wall shear stress, surface forces and derived clinical/engineering quantities are not yet predicted. The hemodynamic setting is relatively favourable for inpainting because inlet/outlet velocity context strongly constrains the dominant flow structure, and local context may carry dynamical but not structural parameters (e.g. Reynolds number, turbulence-model choice). More general CFD problems may need additional conditioning. This is an initial step toward CFD models that behave less like single-purpose predictors and more like reusable generative priors over physically plausible flow fields, with possible implications for large-scale pre-training.
+    </p>
+    </div>
+  </div>
+</section>
+
+  ======================================================================
+  end "Takeaways & limitations" section
+  ======================================================================
+-->
+
+<!-- ====================================================================== -->
+<!-- 7 · PAPER  (title · authors · affiliations · abstract · detailed       -->
+<!--            overview figure · TL;DR — moved to the end, above BibTeX)   -->
+<!-- ====================================================================== -->
+<section class="hero" id="paper">
+  <div class="wrap">
+    <h2>Technical preprint</h2>
+    <h1 class="title">Inpainting physics: self-supervised learning for context-driven fluid simulation</h1>
+
+    <div class="authors">
+      <span><a href="mailto:j.weidner@tum.de">Jonas Weidner</a><sup>1,2</sup></span>,
+      <span>Yeray Martin-Ruisanchez<sup>1</sup></span>,
+      <span>Daniel Rückert<sup>2,3,4</sup></span>,<br />
+      <span>Benedikt Wiestler<sup>1,2,&#8727;</sup></span>,
+      <span>Julian Suk<sup>2,3,&#8727;</sup></span>
+    </div>
+
+    <div class="affil">
+      <sup>1</sup>&nbsp;AI for Image-Guided Diagnosis and Therapy, Technical University of Munich &nbsp;·&nbsp;
+      <sup>2</sup>&nbsp;Munich Center for Machine Learning (MCML) &nbsp;·&nbsp;
+      <sup>3</sup>&nbsp;AI in Healthcare and Medicine, Technical University of Munich &nbsp;·&nbsp;
+      <sup>4</sup>&nbsp;Imperial College London &nbsp;·&nbsp;
+      <sup>*</sup>&nbsp;Shared senior authorship
+    </div>
+
+    <p class="abstract" id="abstract">
+      Neural surrogate models for computational fluid dynamics (CFD) are typically trained as forward operators that map explicit problem specifications, such as geometry and boundary conditions, to solution fields. This ties the model to the conditioning variables seen during training and limits reuse under boundary-condition shifts or local geometry changes. We propose to reformulate steady CFD inference as an inpainting problem: instead of training on explicit boundary conditions, we learn a self-supervised prior over velocity fields and impose boundary constraints only during inference by fixing known regions such as inlet, outlet or unchanged regions from previous simulations. To scale this idea to large 3D meshes, we introduce a local neighbourhood tokeniser that represents high-resolution velocity fields as compact spatial latent tokens and train latent flow-matching and masked-autoencoder models on these tokens. On intracranial aneurysm hemodynamics, our method reconstructs full velocity fields from sparse boundary context, outperforms supervised neural surrogates under boundary-condition and dataset shift and enables local geometry editing by reusing unchanged simulation context. These results suggest that viewing CFD inference as context-conditioned inpainting can turn neural surrogates from task-specific predictors into reusable flow priors.
+    </p>
+
+    <h3 id="tldr" style="margin-top:22px">TL;DR</h3>
+    <p class="lead">
+      Train a self-supervised latent model on CFD velocity fields, impose boundary conditions at inference, predict the flow by inpainting, generalise more flexibly to unseen geometries and flow speeds.
+    </p>
+
+    <h3 id="contributions" style="margin-top:22px">Main contribution</h3>
+    <div class="cards">
+      <div class="card">
+        <h4>Shift the modelling objective</h4>
+        <p>We propose to view CFD emulation as context-conditioned inpainting rather than supervised neural-operator modelling.</p>
+      </div>
+      <div class="card">
+        <h4>Better generalisation</h4>
+        <p>We show that this approach has significantly better generalisation properties with boundary conditions and geometric variations.</p>
+      </div>
+      <div class="card">
+        <h4>Local editing</h4>
+        <p>We propose local editing as a preliminary downstream task tailored to generative models.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 8 · BIBTEX                                                              -->
+<!-- ====================================================================== -->
+<section id="bibtex">
+  <div class="wrap">
+    <h2>BibTeX</h2>
+    <p>If you find this work useful, please consider citing it.</p>
+    <div class="bibtex-box">
+      <button class="copy-btn" id="copy-bibtex">Copy</button>
+<pre id="bibtex-code">@article{weidner2026inpaintingphysics,
+  title   = {Inpainting physics: self-supervised learning for context-driven fluid simulation},
+  author  = {Weidner, Jonas and Martin-Ruisanchez, Yeray and R{\"u}ckert, Daniel
+             and Wiestler, Benedikt and Suk, Julian},
+  journal = {arXiv preprint arXiv:2605.08832},
+  year    = {2026}
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- 8 · MORE INTERACTIVE FIGURES (deformation / masking / wipe)             -->
+<!--     Commented out for now; markup kept for easy restore.                -->
+<!-- ====================================================================== -->
+<!--
+  ======================================================================
+  "More interactive figures" section (figs 3-5: growing aneurysm,
+  masking ratio, drag-to-compare). Currently hidden from the live page.
+  ======================================================================
+
+<section id="interactive-more">
+  <div class="wrap">
+    <h2>More interactive figures</h2>
+    <p>
+      <strong>(1)</strong> Grow an aneurysm on a fixed source artery: the unchanged simulation stays as context, so L-MAE only inpaints the edited region while the supervised surrogate must re-predict the whole field. <strong>(2)</strong> Change how much of the solution is observed (the masking ratio) and watch the inpainting quality respond. <strong>(3)</strong> Drag a divider to compare an L-MAE-inpainted field against the reference CFD solution.
+    </p>
+
+    <div class="scrollmode-bar">
+      <button id="scrollmode-toggle" class="scrollmode-btn" type="button" aria-pressed="false">
+        <span class="sw" aria-hidden="true"></span> Scroll-through animation: <b>off</b>
+      </button>
+      <span class="scrollmode-hint">When on, scrolling over the figure below pins it and steps through its frames; keep scrolling to move past it.</span>
+    </div>
+
+    <div class="interactive">
+      <span class="badge">Interactive figure 1</span>
+      <h3>L-MAE inpainting vs. a forward surrogate, under a growing aneurysm</h3>
+      <p class="sub">Quiver arrows are coloured by velocity magnitude. Errors are full-sample normalised MSE against the reference CFD solution.</p>
+
+      <div class="deform-stage">
+        <div class="deform-cell">
+          <div class="lbl"><span>Deformed geometry</span></div>
+          <div class="deform-frame" id="dc-geo">
+            <img class="on" src="static/images/deform/geo1.jpg" alt="deformed artery, step 1" loading="lazy" decoding="async" />
+            <img src="static/images/deform/geo2.jpg" alt="deformed artery, step 2" loading="lazy" decoding="async" />
+            <img src="static/images/deform/geo3.jpg" alt="deformed artery, step 3" loading="lazy" decoding="async" />
+            <img src="static/images/deform/geo4.jpg" alt="deformed artery, step 4" loading="lazy" decoding="async" />
+            <img src="static/images/deform/geo5.jpg" alt="deformed artery, step 5" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>Reference CFD solution</span></div>
+          <div class="deform-frame" id="dc-gt">
+            <img class="on" src="static/images/deform/gt1.jpg" alt="reference flow, step 1" loading="lazy" decoding="async" />
+            <img src="static/images/deform/gt2.jpg" alt="reference flow, step 2" loading="lazy" decoding="async" />
+            <img src="static/images/deform/gt3.jpg" alt="reference flow, step 3" loading="lazy" decoding="async" />
+            <img src="static/images/deform/gt4.jpg" alt="reference flow, step 4" loading="lazy" decoding="async" />
+            <img src="static/images/deform/gt5.jpg" alt="reference flow, step 5" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>L-MAE (inpainting)</span> <span class="err good" id="err-mae">nMSE 0.9%</span></div>
+          <div class="deform-frame" id="dc-mae">
+            <img class="on" src="static/images/deform/mae1.jpg" alt="L-MAE prediction, step 1" loading="lazy" decoding="async" />
+            <img src="static/images/deform/mae2.jpg" alt="L-MAE prediction, step 2" loading="lazy" decoding="async" />
+            <img src="static/images/deform/mae3.jpg" alt="L-MAE prediction, step 3" loading="lazy" decoding="async" />
+            <img src="static/images/deform/mae4.jpg" alt="L-MAE prediction, step 4" loading="lazy" decoding="async" />
+            <img src="static/images/deform/mae5.jpg" alt="L-MAE prediction, step 5" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>Supervised surrogate (AB-UPT)</span> <span class="err bad" id="err-sup">nMSE 19.3%</span></div>
+          <div class="deform-frame" id="dc-sup">
+            <img class="on" src="static/images/deform/sup1.jpg" alt="supervised prediction, step 1" loading="lazy" decoding="async" />
+            <img src="static/images/deform/sup2.jpg" alt="supervised prediction, step 2" loading="lazy" decoding="async" />
+            <img src="static/images/deform/sup3.jpg" alt="supervised prediction, step 3" loading="lazy" decoding="async" />
+            <img src="static/images/deform/sup4.jpg" alt="supervised prediction, step 4" loading="lazy" decoding="async" />
+            <img src="static/images/deform/sup5.jpg" alt="supervised prediction, step 5" loading="lazy" decoding="async" />
+          </div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <button class="playbtn" id="deform-play" aria-label="play / pause">&#10073;&#10073;</button>
+        <span class="ends">mild</span>
+        <input type="range" class="morph" id="deform-slider" min="1" max="5" step="0.02" value="1" aria-label="aneurysm deformation amount" />
+        <span class="ends">severe</span>
+      </div>
+      <div class="morph-readout" id="deform-readout">Deformation step <b>1</b> of 5</div>
+    </div>
+    <p class="note-soft" style="text-align:left;margin-top:14px">
+      L-MAE keeps full-field nMSE around 1&ndash;10% across all five edits; the forward surrogate stays near 19&ndash;28% because it re-predicts the whole field. Frames are pre-rendered; the slider blends between edit levels.
+    </p>
+
+    <div class="interactive" style="margin-top:26px">
+      <span class="badge">Interactive figure 2</span>
+      <h3>Vary the masking ratio</h3>
+      <p class="sub">
+        Same artery, in-distribution mass flow $m=3$. The masked region (coral) is what each model must inpaint; the rest of the field is given as context. At 20% almost the whole solution is observed; at 99% only inlet/outlet velocities remain. Drag to change how much context the models get.
+      </p>
+
+      <div class="deform-stage" id="mr-stage">
+        <div class="deform-cell">
+          <div class="lbl"><span>Masked input</span> <span class="err" id="mr-frac">20% masked</span></div>
+          <div class="deform-frame" id="mc-in">
+            <img class="on" src="static/images/maskratio/in20.jpg" alt="masked region at 20%" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/in60.jpg" alt="masked region at 60%" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/in99.jpg" alt="masked region at 99%" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>Reference CFD solution</span></div>
+          <div class="deform-frame" id="mc-gt">
+            <img class="on" src="static/images/maskratio/gt.jpg" alt="reference CFD flow" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>L-MAE (inpainting)</span> <span class="err good" id="mr-err-mae">nMSE 3.9%</span></div>
+          <div class="deform-frame" id="mc-mae">
+            <img class="on" src="static/images/maskratio/mae20.jpg" alt="L-MAE inpainting at 20% mask" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/mae60.jpg" alt="L-MAE inpainting at 60% mask" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/mae99.jpg" alt="L-MAE inpainting at 99% mask" loading="lazy" decoding="async" />
+          </div>
+        </div>
+        <div class="deform-cell">
+          <div class="lbl"><span>L-FM-Physics (inpainting)</span> <span class="err" id="mr-err-fm">nMSE 18.7%</span></div>
+          <div class="deform-frame" id="mc-fm">
+            <img class="on" src="static/images/maskratio/fm20.jpg" alt="L-FM-Physics inpainting at 20% mask" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/fm60.jpg" alt="L-FM-Physics inpainting at 60% mask" loading="lazy" decoding="async" />
+            <img src="static/images/maskratio/fm99.jpg" alt="L-FM-Physics inpainting at 99% mask" loading="lazy" decoding="async" />
+          </div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <button class="playbtn" id="mr-play" aria-label="play / pause">&#10073;&#10073;</button>
+        <span class="ends">20%<br><span style="font-size:10px;opacity:.8">most&nbsp;context</span></span>
+        <input type="range" class="morph" id="mr-slider" min="0" max="2" step="1" value="0" aria-label="mask fraction" />
+        <span class="ends">99%<br><span style="font-size:10px;opacity:.8">inlet/outlet</span></span>
+      </div>
+      <div class="morph-readout" id="mr-readout">Mask fraction <b>20%</b> &nbsp;·&nbsp; nMSE &nbsp; L-MAE <b>3.9%</b> &nbsp;vs&nbsp; L-FM-Physics <b>18.7%</b></div>
+      <p class="note-soft" style="text-align:left;margin-top:12px">
+        A supervised forward surrogate (which ignores the context) sits at nMSE&nbsp;&asymp;&nbsp;32% here regardless of mask fraction; L-MAE overtakes it once moderate context is available, while L-FM-Physics is noisier on very large masks.
+      </p>
+    </div>
+
+    <div class="interactive" style="margin-top:26px">
+      <span class="badge">Interactive figure 3</span>
+      <h3>Reference vs. L-MAE inpainting: drag to compare</h3>
+      <p class="sub">Strongest deformation (full-field nMSE&nbsp;=&nbsp;2.7%). Drag the divider: the inpainted field is hard to tell apart from the solver solution.</p>
+      <div class="wipe" id="wipe-1">
+        <img src="static/images/deform/gt5.jpg" alt="reference CFD flow on the deformed artery" loading="lazy" decoding="async" />
+        <div class="top"><img src="static/images/deform/mae5.jpg" alt="L-MAE inpainted flow on the deformed artery" loading="lazy" decoding="async" /></div>
+        <div class="handle" aria-hidden="true"></div>
+        <span class="tag l">Reference CFD</span>
+        <span class="tag r">L-MAE inpainting</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+  ======================================================================
+  end "More interactive figures" section
+  ======================================================================
+-->
+
+<footer>
+  <div class="wrap">
+    Jonas Weidner et&nbsp;al. &nbsp;·&nbsp; Technical University of Munich &amp; MCML &nbsp;·&nbsp; 2026 &nbsp;·&nbsp;
+    <a href="impressum.html">Impressum</a> &nbsp;·&nbsp; <a href="datenschutz.html">Datenschutz</a>
+  </div>
+</footer>
+
+<script>
+  window.MathJax = { tex: { inlineMath: [['$', '$']] }, options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] } };
+</script>
+<!-- MathJax 3.2.2, vendored locally (static/mathjax/): no third-party CDN request -->
+<script async src="static/mathjax/tex-mml-chtml.js"></script>
+<script src="static/data/fm_inpaint.js"></script>
+<script src="static/data/fm_deform.js"></script>
+<script src="static/js/main.js"></script>
+</body>
+</html>
