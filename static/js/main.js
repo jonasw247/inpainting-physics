@@ -471,6 +471,241 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  /* ---- interactive 4b/5b: REAL model predictions (frame-based) ------------ *
+   * Same shaded-geometry + viridis-glyph look as the demo above, but every
+   * frame is the *actual* decoded model output baked by
+   * website/tools/run_inpaint_predictions.py + export_inpaint_predictions.py.
+   *   #fmr-canvas  -- L-FM Euler snapshots (fmFrames frames, slider = t in 0..1)
+   *   #maer-canvas -- iterative L-MAE reveal passes (maeFrames frames, slider = step)
+   * Payload window.FM_INPAINT_REAL = { w,h,geom,L0,vref, fmFrames,maeFrames,
+   *   maskLabel,fixedBC, context:[[x,y,vx,vy]], masked:[[x,y]],
+   *   fm:[[vx0,vy0,...]], mae:[[vx0,vy0,...]], gt:[[vx,vy]], shells:[poly0] }. */
+  function initInpaintReal(RP, sfx) {
+    sfx = sfx || '';
+    var fmrCanvas = document.getElementById('fmr-canvas' + sfx);
+    var maerCanvas = document.getElementById('maer-canvas' + sfx);
+    if (!((fmrCanvas || maerCanvas) && RP &&
+        ((fmrCanvas && fmrCanvas.getContext) || (maerCanvas && maerCanvas.getContext)))) return;
+    var RW = RP.w, RH = RP.h, RL0 = RP.L0, RL0SQ = RL0 * RL0;
+    var R_MASK = (RP.shells && RP.shells[0]) || [];
+    var RML = RP.maskLabel || null;
+    var RBC = (RP.fixedBC || []).filter(function (p) { return p && p.length === 2; });
+    var R_SHAFT = 2.2, R_HALO = 3.8, R_OUTLINE = 5.0, R_HEADMIN = 5.0;
+    var R_CORAL = '#a52a2a', R_SLATE = '#2e3d4f';
+    var R_LBL = Math.max(15, Math.round(0.024 * RW));
+    var R_FMN = RP.fmFrames || 1, R_MAEN = RP.maeFrames || 1;
+
+    /* viridis (19 stops) */
+    var RVIR = [[68,1,84],[71,18,101],[72,38,119],[69,55,129],[64,71,136],[57,85,140],
+      [50,99,141],[44,113,142],[39,125,142],[34,138,141],[32,151,139],[33,165,133],
+      [42,178,125],[64,191,112],[94,201,97],[133,209,78],[174,213,57],[216,217,36],[253,231,37]];
+    function rviridis(t) {
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      var f = t * (RVIR.length - 1), i = f | 0, g = f - i;
+      var a = RVIR[i], b = RVIR[i + 1 < RVIR.length ? i + 1 : i];
+      return 'rgb(' + ((a[0]+(b[0]-a[0])*g)|0) + ',' + ((a[1]+(b[1]-a[1])*g)|0) + ',' + ((a[2]+(b[2]-a[2])*g)|0) + ')';
+    }
+    var RNB = 22, RBUCKET = [];
+    for (var rbi = 0; rbi < RNB; rbi++) RBUCKET.push(rviridis(rbi / (RNB - 1)));
+    function rbucket(vx, vy) { var c = (vx*vx + vy*vy) / RL0SQ; if (c > 1) c = 1; var k = (c * (RNB - 1) + 0.5) | 0; return k < 0 ? 0 : k >= RNB ? RNB - 1 : k; }
+
+    function rArrow(ctx, tx, ty, vx, vy) {
+      var m = Math.sqrt(vx*vx + vy*vy), hx = tx + vx, hy = ty + vy;
+      ctx.moveTo(tx, ty); ctx.lineTo(hx, hy);
+      if (m > R_HEADMIN) {
+        var hl = m < 22 ? m * 0.36 : 7.9 + m * 0.13, ang = Math.atan2(vy, vx);
+        ctx.moveTo(hx, hy); ctx.lineTo(hx - Math.cos(ang - 0.44) * hl, hy - Math.sin(ang - 0.44) * hl);
+        ctx.moveTo(hx, hy); ctx.lineTo(hx - Math.cos(ang + 0.44) * hl, hy - Math.sin(ang + 0.44) * hl);
+      }
+    }
+    function rStroke(ctx, n, px, py, vx, vy, cb, haloA, shaftA, skip) {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      var i;
+      ctx.beginPath();
+      for (i = 0; i < n; i++) { if (skip && skip[i]) continue; rArrow(ctx, px[i], py[i], vx[i], vy[i]); }
+      ctx.lineWidth = R_HALO; ctx.strokeStyle = 'rgba(255,255,255,' + haloA + ')'; ctx.stroke();
+      ctx.globalAlpha = shaftA;
+      for (var bk = 0; bk < RNB; bk++) {
+        ctx.beginPath(); var any = false;
+        for (i = 0; i < n; i++) { if (skip && skip[i]) continue; if (cb[i] !== bk) continue; rArrow(ctx, px[i], py[i], vx[i], vy[i]); any = true; }
+        if (any) { ctx.lineWidth = R_SHAFT; ctx.strokeStyle = RBUCKET[bk]; ctx.stroke(); }
+      }
+      ctx.globalAlpha = 1;
+    }
+    function rPoly(ctx, poly, w, color) {
+      if (!poly || poly.length < 3) return;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(poly[0][0], poly[0][1]);
+      for (var j = 1; j < poly.length; j++) ctx.lineTo(poly[j][0], poly[j][1]);
+      ctx.closePath(); ctx.lineWidth = w; ctx.strokeStyle = color; ctx.stroke();
+    }
+    function rLabel(ctx, txt, color, cxF, cyF) {
+      ctx.save();
+      ctx.font = '700 ' + R_LBL + 'px ' + (getComputedStyle(document.body).fontFamily || 'sans-serif');
+      ctx.fillStyle = color; var w = ctx.measureText(txt).width, m = 8;
+      var x = clamp(cxF * RW, m + w / 2, RW - m - w / 2), y = clamp(cyF * RH, m + R_LBL / 2, RH - m - R_LBL / 2);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, x, y); ctx.restore();
+    }
+    function rLabels(ctx) {
+      if (RML) rLabel(ctx, 'masked region', R_CORAL, 0.84, 0.045);
+      if (RBC.length) rLabel(ctx, 'fixed boundaries', R_SLATE, 0.27, 0.955);
+    }
+
+    /* parse context (static GT glyphs) */
+    var RC = RP.context, rcN = RC.length;
+    var rcPx = new Float32Array(rcN), rcPy = new Float32Array(rcN), rcVx = new Float32Array(rcN), rcVy = new Float32Array(rcN), rcCb = new Uint8Array(rcN);
+    for (var rci = 0; rci < rcN; rci++) { rcPx[rci]=RC[rci][0]; rcPy[rci]=RC[rci][1]; rcVx[rci]=RC[rci][2]; rcVy[rci]=RC[rci][3]; rcCb[rci]=rbucket(rcVx[rci],rcVy[rci]); }
+
+    /* parse masked glyphs: positions + per-frame velocity tables */
+    var RMk = RP.masked, rmN = RMk.length;
+    var rmPx = new Float32Array(rmN), rmPy = new Float32Array(rmN);
+    var rFM = RP.fm, rMAE = RP.mae;   // rFM[i] = [vx0,vy0,vx1,vy1,...], length 2*fmFrames
+    for (var rmi = 0; rmi < rmN; rmi++) { rmPx[rmi]=RMk[rmi][0]; rmPy[rmi]=RMk[rmi][1]; }
+    var rmVx = new Float32Array(rmN), rmVy = new Float32Array(rmN), rmCb = new Uint8Array(rmN);
+    /* MAE reveal pass per masked glyph (1..maeFrames-1); 0 = always shown.
+       A glyph is hidden in the MAE panel until step >= its reveal pass, so the
+       figure never shows an MAE prediction where none has been made yet. */
+    var rmReveal = RP.maeReveal || null;
+    var rmSkip = new Uint8Array(rmN);   // reused per MAE frame
+
+    /* shared offscreen: geometry + static context glyphs */
+    var rReady = false;
+    var rOff = document.createElement('canvas'); rOff.width = RW; rOff.height = RH;
+    var rOffCtx = rOff.getContext('2d');
+    rOffCtx.fillStyle = '#f3f4f6'; rOffCtx.fillRect(0, 0, RW, RH);
+    var rGeom = new Image();
+    rGeom.onload = function () {
+      rOffCtx.fillStyle = '#ffffff'; rOffCtx.fillRect(0, 0, RW, RH);
+      rOffCtx.drawImage(rGeom, 0, 0, RW, RH);
+      rStroke(rOffCtx, rcN, rcPx, rcPy, rcVx, rcVy, rcCb, 0.30, 0.90);
+      rReady = true; if (renderFMR) renderFMR(fmrT); if (renderMAER) renderMAER(maerStep);
+      if (fmrKick) fmrKick(); if (maerKick) maerKick();
+    };
+    rGeom.src = RP.geom;
+
+    function rController(syncBtn, kickFn, stopFn) {
+      var active = false, wantPlay = false;
+      function running() { return active && wantPlay; }
+      function sync() { syncBtn(running() ? ICON_PAUSE : ICON_PLAY); }
+      function apply() { sync(); running() ? kickFn() : stopFn(); }
+      return {
+        running: running,
+        setActive: function (on) { active = on; apply(); },
+        toggle: function () { wantPlay = !wantPlay; apply(); },
+        pause: function () { wantPlay = false; sync(); stopFn(); }
+      };
+    }
+
+    var renderFMR = null, renderMAER = null, fmrKick = null, maerKick = null;
+
+    /* ============== FM real: continuous t over fmFrames snapshots ========= */
+    if (fmrCanvas && fmrCanvas.getContext) {
+      var fmrCtx = fmrCanvas.getContext('2d');
+      fmrCanvas.width = RW; fmrCanvas.height = RH;
+      fmrCtx.fillStyle = '#f3f4f6'; fmrCtx.fillRect(0, 0, RW, RH);
+      var fmrSlider = document.getElementById('fmr-slider' + sfx), fmrReadout = document.getElementById('fmr-readout' + sfx);
+      var fmrBtn = document.getElementById('fmr-play' + sfx);
+      var fmrT = 0;
+      function fmrMeta(t) {
+        fmrT = clamp(t, 0, 1);
+        if (fmrSlider) { fmrSlider.value = fmrT; fmrSlider.style.setProperty('--fill', (fmrT * 100) + '%'); }
+        if (fmrReadout) fmrReadout.innerHTML = 'Integration step <b>' + Math.round(fmrT * (R_FMN - 1)) + ' of ' + (R_FMN - 1) + '</b>';
+      }
+      renderFMR = function (t) {
+        fmrMeta(t);
+        if (!rReady) return;
+        var f = fmrT * (R_FMN - 1), i0 = f | 0, i1 = i0 + 1 < R_FMN ? i0 + 1 : i0, g = f - i0;
+        var b0 = i0 * 2, b1 = i1 * 2;
+        for (var i = 0; i < rmN; i++) {
+          var row = rFM[i];
+          rmVx[i] = row[b0] + (row[b1] - row[b0]) * g;
+          rmVy[i] = row[b0 + 1] + (row[b1 + 1] - row[b0 + 1]) * g;
+          rmCb[i] = rbucket(rmVx[i], rmVy[i]);
+        }
+        fmrCtx.drawImage(rOff, 0, 0);
+        rStroke(fmrCtx, rmN, rmPx, rmPy, rmVx, rmVy, rmCb, 0.35, 0.93);
+        rPoly(fmrCtx, R_MASK, R_OUTLINE, R_CORAL);
+        rLabels(fmrCtx);
+      };
+      var fmrRaf = null, fmrLast = null, fmrPhase = 0, fmrHold = 0, FMR_UP = 4.5, FMR_HOLD = 1.4, FMR_DOWN = 0.9;
+      function fmrLoop(ts) {
+        if (!fmrC.running()) { fmrRaf = null; fmrLast = null; return; }
+        if (fmrLast == null) fmrLast = ts;
+        var dt = (ts - fmrLast) / 1000; fmrLast = ts;
+        if (!rReady) { fmrRaf = requestAnimationFrame(fmrLoop); return; }
+        if (fmrPhase === 0) { fmrT += dt / FMR_UP; if (fmrT >= 1) { fmrT = 1; fmrPhase = 1; fmrHold = 0; } }
+        else if (fmrPhase === 1) { fmrHold += dt; if (fmrHold >= FMR_HOLD) fmrPhase = 2; }
+        else { fmrT -= dt / FMR_DOWN; if (fmrT <= 0) { fmrT = 0; fmrPhase = 0; } }
+        renderFMR(fmrT);
+        fmrRaf = requestAnimationFrame(fmrLoop);
+      }
+      fmrKick = function () { if (fmrC.running() && fmrRaf == null) { fmrLast = null; fmrRaf = requestAnimationFrame(fmrLoop); } };
+      function fmrStop() { if (fmrRaf) cancelAnimationFrame(fmrRaf); fmrRaf = null; fmrLast = null; }
+      var fmrC = rController(function (ic) { if (fmrBtn) fmrBtn.innerHTML = ic; }, fmrKick, fmrStop);
+      if (fmrBtn) fmrBtn.addEventListener('click', fmrC.toggle);
+      if (fmrSlider) {
+        fmrSlider.addEventListener('pointerdown', fmrC.pause);
+        fmrSlider.addEventListener('input', function () { fmrC.pause(); fmrPhase = 0; renderFMR(parseFloat(fmrSlider.value)); });
+      }
+      fmrMeta(0);
+      registerPlayer(fmrCanvas.closest('.fm-col') || fmrCanvas.closest('.interactive'), fmrC.setActive, true);
+    }
+
+    /* ============== MAE real: maeFrames discrete reveal passes ============ */
+    if (maerCanvas && maerCanvas.getContext) {
+      var maerCtx = maerCanvas.getContext('2d');
+      maerCanvas.width = RW; maerCanvas.height = RH;
+      maerCtx.fillStyle = '#f3f4f6'; maerCtx.fillRect(0, 0, RW, RH);
+      var maerSlider = document.getElementById('maer-slider' + sfx), maerReadout = document.getElementById('maer-readout' + sfx);
+      var maerBtn = document.getElementById('maer-play' + sfx);
+      var maerStep = 0, MAER_LAST = R_MAEN - 1;
+      function maerMeta(k) {
+        maerStep = clamp(Math.round(k), 0, MAER_LAST);
+        if (maerSlider) { maerSlider.value = maerStep; maerSlider.style.setProperty('--fill', (maerStep / MAER_LAST * 100) + '%'); }
+        if (maerReadout) maerReadout.innerHTML = 'Step <b>' + maerStep + ' of ' + MAER_LAST + '</b>';
+      }
+      renderMAER = function (k) {
+        maerMeta(k);
+        if (!rReady) return;
+        var b = maerStep * 2;
+        for (var i = 0; i < rmN; i++) {
+          var row = rMAE[i];
+          rmVx[i] = row[b]; rmVy[i] = row[b + 1]; rmCb[i] = rbucket(rmVx[i], rmVy[i]);
+          // hide glyphs not yet revealed at this pass (reveal pass > current step)
+          rmSkip[i] = (rmReveal && rmReveal[i] > maerStep) ? 1 : 0;
+        }
+        maerCtx.drawImage(rOff, 0, 0);
+        rStroke(maerCtx, rmN, rmPx, rmPy, rmVx, rmVy, rmCb, 0.35, 0.93, rmSkip);
+        rPoly(maerCtx, R_MASK, R_OUTLINE, R_CORAL);
+        rLabels(maerCtx);
+      };
+      var maerTimer = null, MAER_DWELL = 900, MAER_HOLD = 1600;
+      function maerTick() {
+        maerTimer = null;
+        if (!maerC.running()) return;
+        maerStep = maerStep >= MAER_LAST ? 0 : maerStep + 1;
+        renderMAER(maerStep);
+        maerTimer = setTimeout(maerTick, maerStep >= MAER_LAST ? MAER_HOLD : MAER_DWELL);
+      }
+      maerKick = function () { if (maerC.running() && maerTimer == null && rReady) maerTimer = setTimeout(maerTick, MAER_DWELL); };
+      function maerStop() { if (maerTimer) clearTimeout(maerTimer); maerTimer = null; }
+      var maerC = rController(function (ic) { if (maerBtn) maerBtn.innerHTML = ic; }, maerKick, maerStop);
+      if (maerBtn) maerBtn.addEventListener('click', maerC.toggle);
+      if (maerSlider) {
+        maerSlider.max = String(MAER_LAST);
+        maerSlider.addEventListener('pointerdown', maerC.pause);
+        maerSlider.addEventListener('input', function () { maerC.pause(); maerStep = clamp(Math.round(parseFloat(maerSlider.value)), 0, MAER_LAST); renderMAER(maerStep); });
+      }
+      maerMeta(0);
+      registerPlayer(maerCanvas.closest('.fm-col') || maerCanvas.closest('.interactive'), maerC.setActive, true);
+    }
+  }
+
+  /* Wire each baked real-prediction shape to its own panel pair. The default
+     (no suffix) keeps backward compat; the suffixed payloads are the candidate
+     shapes stacked on the page. */
+  initInpaintReal(window.FM_INPAINT_REAL_512, '-512');
+
   /* ---- "Local geometry editing": curtain comparison of two states ------- *
    * N different arteries; per artery two panels (geometry | velocity), and one
    * draggable curtain (like the before/after wipe lower on the page) that wipes
@@ -795,11 +1030,15 @@ document.addEventListener('DOMContentLoaded', function () {
     handle.style.left = '50%';
   });
 
-  /* ---- splash: fade the velocity field in over the geometry on scroll -- */
+  /* ---- splash: fade the velocity field in over the geometry on scroll -- *
+   * Drives *all* .splash-flow elements (currently the aneurysm + the ShapeNet
+   * car) in parallel, so both interiors inpaint in sync as you scroll past.
+   * Also publishes the same progress as `--reveal` on .splash so the car's
+   * flow can wipe in left-to-right via a CSS mask gradient.                  */
   (function () {
     var splash = document.querySelector('.splash');
-    var flow = document.querySelector('.splash-flow');
-    if (!splash || !flow) return;
+    var flows = document.querySelectorAll('.splash-flow');
+    if (!splash || !flows.length) return;
     // flow opacity ramps 0 -> 1 over this slice of the splash's scroll-scrub range
     var FADE_START = 0.05, FADE_END = 0.55;
     function update() {
@@ -808,7 +1047,9 @@ document.addEventListener('DOMContentLoaded', function () {
       var p = range > 0 ? clamp(-rect.top / range, 0, 1) : 1;
       var t = clamp((p - FADE_START) / (FADE_END - FADE_START), 0, 1);
       t = t * t * (3 - 2 * t);                                 // smoothstep
-      flow.style.opacity = t.toFixed(3);
+      var s = t.toFixed(3);
+      flows.forEach(function (f) { f.style.opacity = s; });
+      splash.style.setProperty('--reveal', s);
     }
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);

@@ -327,20 +327,32 @@ input[type=range].morph::-moz-range-thumb { width: 14px; height: 14px; border-ra
 .morph-readout { text-align: center; font-size: 12px; color: var(--muted); margin-top: 7px; }
 .morph-readout b { color: var(--fg); }
 
+/* Per-shape heading above each stacked real-prediction panel pair. */
+.fmr-shape-title {
+  text-align: center; margin: 34px auto 6px; max-width: 840px;
+  font-size: 0.98rem; font-weight: 600; color: var(--fg);
+  opacity: 0.85; border-top: 1px solid var(--border, #e3e6ea); padding-top: 22px;
+}
+.fmr-shape-title:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+
 /* "Inpainting methods": the FM / MAE real-CFD glyph canvases side by side
    (stacking on narrow screens). The h3 + caption above each canvas get a fixed
    height so both canvases - and the controls below them - line up vertically. */
-.fm-pair { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; margin: 4px 0; }
-.fm-pair .fm-col { flex: 1 1 360px; min-width: 0; margin: 0; display: flex; flex-direction: column; }
-.fm-pair .fm-col > h3  { min-height: 1.3em; margin-bottom: 4px; }
-.fm-pair .fm-col > .sub { min-height: 3.6em; }                  /* ~2 caption lines + the 10px bottom margin */
+.fm-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px;
+  justify-items: center; align-items: start; margin: 4px auto; max-width: 840px;
+}
+.fm-col { min-width: 0; width: 100%; margin: 0; display: flex; flex-direction: column; }
+.fm-col > h3  { min-height: 1.3em; margin-bottom: 4px; }
+.fm-col > .sub { min-height: 3.6em; }                  /* ~2 caption lines + the 10px bottom margin */
 .fm-stage { display: flex; justify-content: center; margin-top: 0; }
-#fm-canvas, #mae-canvas {
-  width: 100%; height: auto; display: block;
+#fm-canvas, #mae-canvas, [id^="fmr-canvas"], [id^="maer-canvas"] {
+  width: 100%; max-width: 400px; height: auto; display: block; margin: 0 auto;
   border: 1px solid var(--rule); border-radius: 7px; background: #fff;
 }
-@media (max-width: 720px) {                                     /* stacked: drop the reserved heights */
-  .fm-pair .fm-col > h3, .fm-pair .fm-col > .sub { min-height: 0; }
+@media (max-width: 720px) {                                     /* stacked: one column, drop reserved heights */
+  .fm-pair { grid-template-columns: 1fr; }
+  .fm-col > h3, .fm-col > .sub { min-height: 0; }
 }
 
 /* "Local geometry editing": one .dfm-artery per pair (2-up grid). The geometry
@@ -527,6 +539,62 @@ footer a { color: var(--muted); text-decoration: underline; }
      so the right edge looks identical whether or not the interior has faded in.
      Bigger = more fade; 0 = hard edge. Keep it below the 5% inner-stop in --bc-right. */
   --rfade: 3%;
+}
+/* the splash carries two cards side by side: the aneurysm + a ShapeNet car
+   (whose front-inflow flow is also inpainted). Both fade their interior flow
+   in on scroll in parallel (main.js drives all .splash-flow nodes together). */
+.splash-pair {
+  position: relative; z-index: 1;
+  display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center;
+  gap: clamp(16px, 4vw, 56px);
+  width: 100%;
+}
+/* each card = the art (image stack) above a short caption that describes the
+   boundary-conditions / inpainted region for that specific geometry.
+   align-items: stretch on .splash-pair + justify-content: space-between here
+   keeps both cards the same total height (the art tops align, the captions
+   are pinned to the bottom of the tallest card). */
+.splash-card {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: min(46vw, 560px, calc(50vh * 1200 / 998));
+}
+.splash-pair .splash-art {
+  width: 100%;   /* the card owns the width now; art fills it */
+}
+.splash-card-caption {
+  margin: 0;
+  text-align: center;
+  max-width: 36ch;
+  color: rgba(255,255,255,.66);
+  font-size: clamp(.86rem, 1.4vw, 1.02rem);
+  line-height: 1.4;
+  letter-spacing: .01em;
+}
+.splash-art--car {
+  --rfade: 0%;   /* the car's flow has no matched edge bands; no right-edge fade needed */
+}
+/* Car flow: instead of a global opacity fade, *wipe in* left-to-right driven by
+   --reveal (0..1, set by main.js from the same scroll progress as the opacity
+   fade). The leftmost 5% (the inflow strip) stays visible at all times via the
+   .splash-flow-bc sibling below. */
+.splash-art--car .splash-flow {
+  opacity: 1 !important;
+  /* leading edge of the wipe sits at `reveal * 95% + 5%` (so it starts past
+     the always-on inflow band); 4%-wide soft band before fully transparent. */
+  --rx: calc(var(--reveal, 0) * 95% + 5%);
+  -webkit-mask-image: linear-gradient(to right, #fff 0, #fff calc(var(--rx) - 4%), transparent var(--rx));
+          mask-image: linear-gradient(to right, #fff 0, #fff calc(var(--rx) - 4%), transparent var(--rx));
+}
+/* Always-on leftmost 5% (inflow strip) of the car flow. Same PNG, different mask. */
+.splash-art--car .splash-flow-bc {
+  -webkit-mask-image: linear-gradient(to right, #fff 0 4%, transparent 6%);
+          mask-image: linear-gradient(to right, #fff 0 4%, transparent 6%);
+}
+@media (max-width: 760px) {                                    /* narrow screens: stack vertically */
+  .splash-pair { flex-direction: column; gap: 28px; }
+  .splash-card { width: min(94vw, 560px, calc(40vh * 1200 / 998)); }
 }
 .splash-geo, .splash-flow, .splash-flow-bc {
   position: absolute; inset: 0;

@@ -27,12 +27,30 @@
       <div class="splash-wordmark">Inpainting&nbsp;physics</div>
       <p class="splash-sub">Self&#8209;supervised learning for context&#8209;driven fluid simulation</p>
     </div>
-    <div class="splash-art" aria-hidden="true">
-      <img class="splash-geo"     src="static/images/hero/geometry.png" alt="" decoding="async" fetchpriority="high" />
-      <img class="splash-flow"    src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- interior: faded in on scroll -->
-      <img class="splash-flow-bc" src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- inflow + outflow: always shown -->
+    <div class="splash-pair">
+      <!-- left card: a ShapeNet car whose flow field is inpainted from the
+           inflow front (predicted by the trained latent-MAE; car 0733,
+           keep_frac=0.05 means almost everything is inpainted). -->
+      <div class="splash-card">
+        <div class="splash-art splash-art--car" aria-hidden="true">
+          <img class="splash-geo"     src="static/images/hero/car/geometry.png" alt="" decoding="async" fetchpriority="high" />
+          <img class="splash-flow"    src="static/images/hero/car/flow.png"     alt="" decoding="async" />   <!-- predicted flow: wipes in left-to-right on scroll -->
+          <img class="splash-flow-bc" src="static/images/hero/car/flow.png"     alt="" decoding="async" />   <!-- leftmost 5% (inflow strip): always visible -->
+        </div>
+        <p class="splash-card-caption">Fix&nbsp;the&nbsp;air&nbsp;inflow on the left, inpaint the rest of the flow around the car.</p>
+      </div>
+      <!-- right card: an intracranial aneurysm whose interior flow is inpainted
+           from the inlet/outlet boundary conditions (ground truth here, the model
+           prediction is shown in the interactive figures below). -->
+      <div class="splash-card">
+        <div class="splash-art" aria-hidden="true">
+          <img class="splash-geo"     src="static/images/hero/geometry.png" alt="" decoding="async" />
+          <img class="splash-flow"    src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- interior: faded in on scroll -->
+          <img class="splash-flow-bc" src="static/images/hero/flow.png"     alt="" decoding="async" />   <!-- inflow + outflow: always shown -->
+        </div>
+        <p class="splash-card-caption">Fix&nbsp;the&nbsp;inlet&nbsp;and&nbsp;outlet blood-flow, inpaint the interior of the aneurysm sac.</p>
+      </div>
     </div>
-    <p class="splash-caption">Inlet&nbsp;&amp;&nbsp;outlet stay fixed, the interior flow is inpainted.</p>
     <a class="splash-scroll" href="#nutshell" aria-label="Scroll to the paper">&#x25BE;</a>
   </div>
 </section>
@@ -132,13 +150,14 @@
 </section>
 
 <!-- ====================================================================== -->
-<!-- 5 · INTERACTIVE                                                         -->
+<!-- 5 · INTERACTIVE — conceptual demo (commented out; markup kept for restore) -->
 <!-- ====================================================================== -->
+<!--
 <section id="interactive">
   <div class="wrap">
     <h2>Inpainting methods demo</h2>
     <p class="sub">
-      We fix the boundaries at inlet and outlet and inpaint the rest based on the context. For the inference, we compare two different approaches: <b>flow matching</b> integrates the masked region from noise to flow, implicitly conditioned on the fixed inlet/outlet; <b>masked auto-encoding</b> predicts the masked region in a few steps, working inward from the fixed context. Drag to see the conceptual inpainting progress over time. We show a schematic visualisation as the original models work in latent space.
+      We fix the boundaries at inlet and outlet and inpaint the rest based on the context. For the inference, we compare two different approaches: <b>flow matching</b> integrates the masked region from noise to flow, implicitly conditioned on the fixed inlet/outlet; <b>masked auto-encoding</b> predicts the masked region in a few steps, working inward from the fixed context. Drag to see the conceptual inpainting progress over time.
     </p>
     <div class="interactive bare">
       <div class="fm-pair">
@@ -170,6 +189,51 @@
             <span class="ends">solution<br><span style="font-size:10px;opacity:.8">step&nbsp;5</span></span>
           </div>
           <div class="morph-readout" id="mae-readout">Step <b>0 of 5</b></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+-->
+
+<!-- ====================================================================== -->
+<!-- 5 · INPAINTING METHODS  (real model predictions on a held-out shape)    -->
+<!-- ====================================================================== -->
+<section id="interactive-real">
+  <div class="wrap">
+    <h2>Inpainting methods</h2>
+    <p class="sub">
+      We fix the velocity at the inlet and outlet and inpaint the rest from that context. We compare two methods, showing the <b>actual model output</b> on a held-out shape (Aneumo): <b>flow matching</b> integrates the masked latents from noise over the slider's Euler steps; the <b>masked auto-encoder</b> fills them in over five boundary-inward passes, revealing glyphs only where it has predicted so far. The final frame is the network's prediction, decoded to velocity &mdash; Drag a slider or press play.
+    </p>
+    <div class="interactive bare">
+      <div class="fm-pair">
+        <div class="fm-col">
+          <h3>Flow matching</h3>
+          <div class="fm-stage">
+            <canvas id="fmr-canvas-512" aria-label="flow-matching model prediction on a real aneurysm CFD field: the masked region is integrated from noise to the predicted flow over Euler steps; inlet, outlet and the surrounding field stay fixed as context"></canvas>
+          </div>
+          <div class="slider-row">
+            <button class="playbtn" id="fmr-play-512" aria-label="play / pause">&#9654;</button>
+            <span class="ends">noise<br><span style="font-size:10px;opacity:.8">t&nbsp;=&nbsp;0</span></span>
+            <input type="range" class="morph" id="fmr-slider-512" min="0" max="1" step="0.001" value="0" aria-label="flow-matching integration time" />
+            <span class="ends">prediction<br><span style="font-size:10px;opacity:.8">t&nbsp;=&nbsp;1</span></span>
+          </div>
+          <div class="morph-readout" id="fmr-readout-512">Integration step <b>0</b></div>
+        </div>
+
+        <div class="fm-col">
+          <h3>Iterative masked auto-encoder</h3>
+          <div class="fm-stage">
+            <canvas id="maer-canvas-512" aria-label="iterative masked-autoencoder model prediction on a real aneurysm CFD field: the masked region is filled from the boundary inward over five prediction passes; inlet, outlet and the surrounding field stay fixed as context"></canvas>
+          </div>
+          <div class="slider-row">
+            <button class="playbtn" id="maer-play-512" aria-label="play / pause">&#9654;</button>
+            <span class="ends">masked<br><span style="font-size:10px;opacity:.8">step&nbsp;0</span></span>
+            <input type="range" class="morph" id="maer-slider-512" min="0" max="5" step="1" value="0" aria-label="iterative MAE prediction step" />
+            <span class="ends">prediction<br><span style="font-size:10px;opacity:.8">step&nbsp;5</span></span>
+          </div>
+          <div class="morph-readout" id="maer-readout-512">Step <b>0 of 5</b></div>
         </div>
       </div>
     </div>
@@ -619,6 +683,7 @@
 <!-- MathJax 3.2.2, vendored locally (static/mathjax/): no third-party CDN request -->
 <script async src="static/mathjax/tex-mml-chtml.js"></script>
 <script src="static/data/fm_inpaint.js"></script>
+<script src="static/data/fm_inpaint_real_512.js"></script>
 <script src="static/data/fm_deform.js"></script>
 <script src="static/js/main.js"></script>
 </body>
